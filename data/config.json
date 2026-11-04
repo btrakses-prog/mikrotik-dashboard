@@ -1,0 +1,58 @@
+{
+    "branding": {
+        "logo": "",
+        "banner": "",
+        "title": "MikroTik Shortcut",
+        "subtitle": "Network Management Dashboard"
+    },
+    "shortcuts": [
+        {
+            "label": "NuxBilling",
+            "url": "https://taglis.tlfiber.my.id/admin",
+            "icon": "link"
+        },
+        {
+            "label": "GenieACS",
+            "url": "https://acs2.tlfiber.my.id",
+            "icon": "link"
+        },
+        {
+            "label": "OLT-Gpon",
+            "url": "https://apps.tlfiber.my.id/olt.html",
+            "icon": "link"
+        },
+        {
+            "label": "FileManager",
+            "url": "https://apps.tlfiber.my.id/tfm",
+            "icon": "link"
+        }
+    ],
+    "routers": [
+        {
+            "id": "0c7ee531eb",
+            "label": "Router-LoadBalance",
+            "host": "192.168.70.1",
+            "port": 8728,
+            "username": "btr",
+            "password": "btr",
+            "tls": false,
+            "monitor_interfaces": [
+                "ether1",
+                "ether2",
+                "ether3"
+            ]
+        },
+        {
+            "id": "99ba237f76",
+            "label": "Router-Distribusi",
+            "host": "192.100.100.254",
+            "port": 8728,
+            "username": "btr",
+            "password": "btr",
+            "tls": false,
+            "monitor_interfaces": [
+                "vlan1090-UPLINK_IN_DR-TL"
+            ]
+        }
+    ]
+}

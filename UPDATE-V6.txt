@@ -1,0 +1,12 @@
+UPDATE V6
+- Perbaikan menu Shortcut: saat halaman Shortcut dibuka, daftar shortcut dimuat ulang dari konfigurasi server sebelum dirender.
+- Sidebar mobile sekarang dapat dibuka/tutup melalui tombol hamburger dan tombol X.
+- Menambahkan overlay gelap; ketuk area luar sidebar untuk menutupnya.
+- Sidebar otomatis menutup setelah menu dipilih atau tombol Escape ditekan.
+- Cache CSS dan JavaScript diperbarui ke versi 6.
+
+Instalasi:
+1. Backup data/config.json.
+2. Ekstrak ZIP dan upload seluruh isi folder untuk menimpa aplikasi lama.
+3. Jangan hapus data/config.json agar router, shortcut, dan branding tetap tersimpan.
+4. Buka dashboard lalu lakukan hard refresh (Ctrl+Shift+R).
