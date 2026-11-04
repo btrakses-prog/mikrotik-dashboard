@@ -1,51 +1,53 @@
-> Paket kompatibilitas: **PHP 8.0 atau lebih baru**. Persyaratan: PHP 8.0 atau lebih baru.
+# MikroTik Load Balance Dashboard — V13.2
 
-# MikroTik Shortcut Dashboard
+Dashboard PHP + JSON untuk memantau hingga 5 router MikroTik RouterOS v7, PPPoE, Load Balance, dan GenieACS. Tidak memerlukan MySQL.
 
-Dashboard PHP + JSON (tanpa MySQL) untuk mengelola hingga 5 MikroTik melalui RouterOS API.
+## Persyaratan
+- PHP 8.0+ (paket PHP 8) atau PHP 7.4+ (paket PHP 7.4).
+- Ekstensi PHP JSON dan akses socket/stream.
+- Server dapat menjangkau MikroTik API, GenieACS NBI, dan `api.telegram.org`.
 
-## Fitur
-- Ringkasan status router, identitas, board/type, serial number, RouterOS version dan uptime.
-- PPPoE online dari `/ppp/active/print`.
-- PPPoE offline dari `/ppp/secret/print` dikurangi username yang sedang aktif.
-- Pencarian username/IP, filter router, dan tombol remote HTTP ke IP pelanggan.
-- Pengaturan router: host, port API, username, password, API-SSL, tes koneksi.
-- Upload logo dan banner.
-- Shortcut aplikasi yang dapat ditambah, diedit, dan dihapus.
-- Penyimpanan konfigurasi JSON, tanpa database.
+## Instalasi / update
+1. Ekstrak paket ke folder web server.
+2. Untuk update, backup aplikasi lama lalu timpa file aplikasi.
+3. **Pertahankan `data/config.json`** agar konfigurasi router, GenieACS, shortcut, branding, dan notifikasi tidak hilang.
+4. Pastikan folder `data` dan `uploads` dapat ditulis oleh user web server.
+5. Buka dashboard, lalu periksa menu Pengaturan.
 
-## Instalasi
-1. Ekstrak folder `mikrotik-shortcut-dashboard` ke document root Apache, misalnya `/var/www/html/`.
-2. Pastikan PHP 8.0 atau lebih baru aktif dengan ekstensi `fileinfo`, `json`, dan dukungan sockets/streams.
-3. Beri hak tulis kepada user Apache pada folder `data` dan `uploads`:
-   ```bash
-   sudo chown -R www-data:www-data /var/www/html/mikrotik-shortcut-dashboard/data /var/www/html/mikrotik-shortcut-dashboard/uploads
-   sudo chmod 750 /var/www/html/mikrotik-shortcut-dashboard/data /var/www/html/mikrotik-shortcut-dashboard/uploads
-   ```
-4. Buka `http://IP-SERVER/mikrotik-shortcut-dashboard/`.
-5. Masuk menu Pengaturan → Router → isi alamat IP, port API, username dan password.
+Contoh permission (sesuaikan lokasi instalasi):
+```bash
+sudo chown -R www-data:www-data /var/www/html/dashboard/data /var/www/html/dashboard/uploads
+sudo chmod 750 /var/www/html/dashboard/data /var/www/html/dashboard/uploads
+```
 
-## Konfigurasi MikroTik
-Aktifkan API hanya dari IP server dashboard. Contoh RouterOS v7 (sesuaikan IP server):
+## Fitur utama
+- Ringkasan router, identitas perangkat, uptime, dan status koneksi.
+- PPPoE online/offline, pencarian, remote IP, dan Kick PPPoE.
+- Monitoring traffic interface Load Balance dengan refresh otomatis.
+- GenieACS per router: status ONU, PPP username, model, serial number, RX power, dan Last Inform; pengurutan tabel tersedia.
+- Shortcut aplikasi, branding, serta tema terang/gelap.
+- Notifikasi Telegram untuk router, WAN interface, ONU offline, RX buruk, dan PPPoE offline massal.
+- Pengaturan notifikasi per jenis, cooldown/anti-spam, pengingat, pemulihan, ringkasan ONU, dan ambang monitoring.
+- Pesan ONU/RX menyertakan PPPoE username dan serial number (SN) bila data GenieACS tersedia. Notifikasi PPPoE massal menyertakan daftar username offline dan SN yang berhasil dicocokkan.
+
+## Konfigurasi MikroTik API
+Batasi layanan API hanya dari IP server dashboard. Contoh RouterOS v7 (ubah alamat sesuai jaringan):
 ```routeros
 /ip service set api disabled=no port=8728 address=192.168.200.100/32
 /user group add name=dashboard-api policy=read,api
 /user add name=dashboard-api group=dashboard-api password=GANTI_PASSWORD_KUAT
 ```
-Jika user/group sudah ada, jangan dibuat ulang. Jangan membuka API ke seluruh internet. Untuk koneksi lintas jaringan, gunakan VPN atau API-SSL dan firewall allowlist.
+Jangan membuka API ke internet publik. Gunakan VPN/firewall allowlist untuk akses lintas jaringan.
 
-## Catatan penting
-- Tombol Remote membuka `http://IP-PPPoE` di tab baru. Pastikan perangkat pelanggan memang menyediakan web management pada HTTP dan routing dari browser/server memungkinkan. Untuk Winbox, gunakan IP tersebut secara manual atau sesuaikan skema remote sesuai lingkungan.
-- RouterOS API port default 8728; API-SSL umumnya 8729. Sertifikat TLS self-signed diterima oleh client ini, sehingga untuk produksi gunakan jaringan privat/VPN dan batasi akses.
-- Password API disimpan di `data/config.json`; lindungi folder ini dan jangan publikasikan file konfigurasi.
-- Versi awal ini belum dilengkapi login dashboard/CSRF protection. Pasang pada LAN/VPN tepercaya, jangan diekspos langsung ke internet.
-- Status offline berarti PPP Secret tidak memiliki sesi aktif saat data dibaca; akun disabled juga akan tampil offline.
+## GenieACS dan Telegram
+- Isi URL NBI per router, misalnya `http://192.168.200.100:7557`.
+- Isi Bot Token dan Chat ID di Pengaturan → Notifikasi Telegram. Token disimpan di `data/config.json`; lindungi file tersebut.
+- Pemeriksaan notifikasi berjalan ketika dashboard aktif di browser. Monitoring 24/7 saat browser ditutup memerlukan cron/worker server.
+- Pastikan server dapat mengakses Telegram API melalui HTTPS.
 
-
-## Monitoring Load Balance
-- Panel traffic Load Balance ditampilkan di bagian paling atas Dashboard.
-- Menu **Load Balance** menampilkan panel traffic dan pengaturan interface per router.
-- Pilih router, centang interface WAN yang digunakan untuk load balance, lalu klik **Simpan Interface**.
-- RX adalah download yang diterima interface; TX adalah upload yang dikirim interface.
-- Data diperbarui otomatis setiap 5 detik melalui RouterOS API.
-- Pastikan user API memiliki policy `read,api` dan interface yang dipilih benar-benar interface WAN.
+## Catatan keamanan dan operasional
+- Dashboard ini menggunakan penyimpanan JSON, bukan MySQL.
+- Versi ini tidak menyediakan login dashboard/CSRF protection bawaan; gunakan hanya pada LAN/VPN tepercaya dan batasi akses web.
+- RX power bergantung pada parameter yang dikirim perangkat ke GenieACS. Jika username atau SN tidak tersedia, pesan akan menampilkan `Tidak terdeteksi`.
+- WAN dipantau berdasarkan status interface yang dipilih di menu Load Balance, bukan tes ping ke internet.
+- Uji notifikasi Telegram dan koneksi perangkat setelah instalasi.

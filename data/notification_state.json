@@ -1,0 +1,42 @@
+{
+    "router:0c7ee531eb": {
+        "active": false,
+        "last_sent": 0
+    },
+    "wan:0c7ee531eb:ether1": {
+        "active": false,
+        "last_sent": 0
+    },
+    "wan:0c7ee531eb:ether2": {
+        "active": false,
+        "last_sent": 0
+    },
+    "wan:0c7ee531eb:ether3": {
+        "active": true,
+        "last_sent": 1793773703
+    },
+    "pppoe:0c7ee531eb": {
+        "active": false,
+        "last_sent": 0
+    },
+    "router:99ba237f76": {
+        "active": false,
+        "last_sent": 0
+    },
+    "wan:99ba237f76:vlan1090-UPLINK_IN_DR-TL": {
+        "active": false,
+        "last_sent": 0
+    },
+    "pppoe:99ba237f76": {
+        "active": false,
+        "last_sent": 0
+    },
+    "onu:99ba237f76": {
+        "active": false,
+        "last_sent": 0
+    },
+    "rx:99ba237f76": {
+        "active": true,
+        "last_sent": 1793773556
+    }
+}

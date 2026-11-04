@@ -6,9 +6,15 @@ async function api(action,data={},method='GET'){let url='api.php?action='+encode
 function notify(m,b=false){const a=$('#alert');a.textContent=m;a.className='alert '+(b?'error':'success');setTimeout(()=>a.classList.add('hidden'),4500)}
 function closeSidebar(){const sb=$('#sidebar');sb.classList.remove('open');$('#sidebarOverlay')?.classList.remove('show');$('#menuBtn')?.setAttribute('aria-expanded','false')}
 function toggleSidebar(){const sb=$('#sidebar'),open=!sb.classList.contains('open');sb.classList.toggle('open',open);$('#sidebarOverlay')?.classList.toggle('show',open);$('#menuBtn')?.setAttribute('aria-expanded',String(open))}
-function page(n){$$('.page').forEach(p=>p.classList.toggle('active',p.id==='page-'+n));$$('.nav').forEach(x=>x.classList.toggle('active',x.dataset.page===n));$('#pageTitle').textContent={dashboard:'Dashboard Monitoring',loadbalance:'Monitoring Load Balance',shortcuts:'Shortcut Aplikasi',settings:'Pengaturan'}[n]||n;if(n==='settings')loadSettings();if(n==='shortcuts')loadSettings().then(()=>renderShortcuts());if(n==='loadbalance')loadLoadBalancePage();closeSidebar()}
+function page(n){$$('.page').forEach(p=>p.classList.toggle('active',p.id==='page-'+n));$$('.nav').forEach(x=>x.classList.toggle('active',x.dataset.page===n));$('#pageTitle').textContent={dashboard:'Dashboard Monitoring',loadbalance:'Monitoring Load Balance',shortcuts:'Shortcut Aplikasi',settings:'Pengaturan',genieacs:'GenieACS Monitoring'}[n]||n;if(n==='genieacs')loadGenieacs();if(n==='settings')loadSettings();if(n==='shortcuts')loadSettings().then(()=>renderShortcuts());if(n==='loadbalance')loadLoadBalancePage();closeSidebar()}
 $$('.nav').forEach(n=>n.onclick=()=>page(n.dataset.page));$$('[data-goto]').forEach(n=>n.onclick=()=>page(n.dataset.goto));$('#menuBtn').onclick=toggleSidebar;$('#sidebarClose').onclick=closeSidebar;$('#sidebarOverlay').onclick=closeSidebar;document.addEventListener('keydown',e=>{if(e.key==='Escape')closeSidebar()});
 function clock(){if($('#clock'))$('#clock').textContent=new Date().toLocaleString('id-ID')}clock();setInterval(clock,30000);
+// Theme preference: light is the default; user choice is kept in this browser.
+const themeButton=$('#themeToggle');
+function applyTheme(mode){const dark=mode==='dark';document.body.classList.toggle('dark',dark);if(themeButton){themeButton.textContent=dark?'☀ Light':'☾ Dark';themeButton.setAttribute('aria-pressed',String(dark));themeButton.title=dark?'Beralih ke Light Mode':'Beralih ke Dark Mode';}}
+let savedTheme='light';try{savedTheme=localStorage.getItem('noc-dashboard-theme')||'light'}catch(e){}
+applyTheme(savedTheme);
+if(themeButton)themeButton.addEventListener('click',()=>{const next=document.body.classList.contains('dark')?'light':'dark';applyTheme(next);try{localStorage.setItem('noc-dashboard-theme',next)}catch(e){}});
 $('#refreshBtn').onclick=loadOverview;
 async function loadOverview(){
  try{
@@ -98,12 +104,62 @@ $('#saveLBInterfaces').onclick=async()=>{
  const selected=$$('#lbInterfaceList input[type="checkbox"]:checked').map(x=>x.value);
  try{await api('save_monitor_interfaces',{router:id,interfaces:JSON.stringify(selected)},'POST');notify('Interface Load Balance berhasil disimpan.');await loadOverview();await loadLoadBalancePage()}catch(e){notify(e.message,true)}
 };
+let genieRows=[],genieSort={key:'username',dir:1};
+async function loadGenieacs(){
+ const body=$('#genieRows'); if(!body)return; body.innerHTML='<tr><td colspan="7" class="empty">Mengambil data GenieACS...</td></tr>';
+ try{
+  const d=await api('genieacs_devices');genieRows=d.rows||[];
+  $('#genieTotal').textContent=genieRows.length;$('#genieOnline').textContent=genieRows.filter(x=>x.status==='online').length;$('#genieOffline').textContent=genieRows.filter(x=>x.status==='offline').length;$('#genieWeak').textContent=genieRows.filter(x=>x.rx!==null&&Number(x.rx)<=-24).length;
+  const filter=$('#genieRouterFilter'),old=filter.value;filter.innerHTML='<option value="">Semua router</option>'+[...new Set(genieRows.map(x=>x.router))].map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');filter.value=old;
+  renderGenieRows();
+  if(d.errors&&d.errors.length)notify('GenieACS: '+d.errors.map(x=>x.router+': '+x.error).join(' | '),true);
+ }catch(e){body.innerHTML=`<tr><td colspan="7" class="empty error-text">${esc(e.message)}</td></tr>`}
+}
+function renderGenieRows(){
+ const q=($('#genieSearch')?.value||'').toLowerCase(),router=$('#genieRouterFilter')?.value||'',status=$('#genieStatusFilter')?.value||'';
+ const rows=genieRows.filter(x=>(!router||x.router===router)&&(!status||x.status===status)&&[x.username,x.serial,x.model,x.router].join(' ').toLowerCase().includes(q));
+ const key=genieSort.key,dir=genieSort.dir;
+ rows.sort((a,b)=>{
+  let av=a[key],bv=b[key];
+  if(key==='rx'){av=av===null?-999:Number(av);bv=bv===null?-999:Number(bv)}
+  else if(key==='last_inform'){av=av?new Date(av).getTime():0;bv=bv?new Date(bv).getTime():0}
+  else {av=String(av??'').toLowerCase();bv=String(bv??'').toLowerCase()}
+  if(av<bv)return -1*dir;if(av>bv)return 1*dir;return 0;
+ });
+ $$('.genie-table th[data-sort]').forEach(th=>{
+  const active=th.dataset.sort===key;th.classList.toggle('sorted',active);
+  th.setAttribute('aria-sort',active?(dir===1?'ascending':'descending'):'none');
+  const label=th.dataset.label||th.textContent.replace(/[▲▼↕]/g,'').trim();
+  th.textContent=label+(active?(dir===1?' ▲':' ▼'):' ↕');
+ });
+ $('#genieRows').innerHTML=rows.length?rows.map(x=>{const rx=x.rx===null?'N/A':Number(x.rx).toFixed(2)+' dBm';const cls=x.rx===null?'unknown':x.rx>-20?'good':x.rx>-24?'warn':'bad';return `<tr><td><b>${esc(x.username)}</b></td><td><span class="status ${x.status}">${x.status==='online'?'● Online':'● Offline'}</span></td><td>${esc(x.model)}</td><td class="mono">${esc(x.serial)}</td><td><span class="rx-level ${cls}">${rx}</span></td><td>${x.last_inform?esc(new Date(x.last_inform).toLocaleString('id-ID')):'-'}</td><td>${esc(x.router)}</td></tr>`}).join(''):'<tr><td colspan="7" class="empty">Tidak ada perangkat yang cocok.</td></tr>';
+}
+$$('.genie-table th[data-sort]').forEach(th=>th.addEventListener('click',()=>{
+ const key=th.dataset.sort;if(genieSort.key===key)genieSort.dir*=-1;else genieSort={key,dir:1};renderGenieRows();
+}));
+$('#refreshGenieacs')?.addEventListener('click',loadGenieacs);$('#genieSearch')?.addEventListener('input',renderGenieRows);$('#genieRouterFilter')?.addEventListener('change',renderGenieRows);$('#genieStatusFilter')?.addEventListener('change',renderGenieRows);
+// GenieACS hanya diperbarui saat halaman dibuka atau tombol Refresh ditekan.
+$('#testGenieacs')?.addEventListener('click',async()=>{const f=new FormData($('#routerForm'));try{const d=await api('test_genieacs',f,'POST');$('#genieTestResult').textContent='✓ '+d.message;$('#genieTestResult').className='hint success-text'}catch(e){$('#genieTestResult').textContent='✕ '+e.message;$('#genieTestResult').className='hint error-text'}});
+
 async function loadSettings(){
  try{const d=await api('get_settings');routers=d.routers;shortcuts=d.shortcuts||[];$('#brandTitle').value=d.branding.title||'MikroTik Shortcut';$('#brandSubtitle').value=d.branding.subtitle||'Network Management Dashboard';
  renderShortcutEditor();
- $('#routerSettings').innerHTML=routers.length?routers.map(r=>`<div class="setting-router"><div><b>${esc(r.label)}</b><small>${esc(r.host)}:${r.port} • ${r.tls?'API-SSL':'API'}<br>Monitor: ${esc((r.monitor_interfaces||[]).join(', ')||'Belum diatur')}</small></div><div><button class="btn tiny" onclick="editRouter('${r.id}')">Edit</button> <button class="btn tiny danger" onclick="deleteRouter('${r.id}')">Hapus</button></div></div>`).join(''):'<div class="empty">Belum ada router terdaftar.</div>';
+  loadNotificationSettings(d.notifications||{});
+ $('#routerSettings').innerHTML=routers.length?routers.map(r=>`<div class="setting-router"><div><b>${esc(r.label)}</b><small>${esc(r.host)}:${r.port} • ${r.tls?'API-SSL':'API'}<br>Monitor: ${esc((r.monitor_interfaces||[]).join(', ')||'Belum diatur')}<br>GenieACS: ${esc(r.genieacs_url||'Belum diatur')}</small></div><div><button class="btn tiny" onclick="editRouter('${r.id}')">Edit</button> <button class="btn tiny danger" onclick="deleteRouter('${r.id}')">Hapus</button></div></div>`).join(''):'<div class="empty">Belum ada router terdaftar.</div>';
  }catch(e){notify(e.message,true)}
 }
+
+function loadNotificationSettings(n){
+ const f=$('#notificationForm');if(!f)return;
+ ['enabled','anti_spam','reminder_enabled','recovery_enabled','batch_enabled','event_router_offline','event_wan_down','event_onu_offline','event_rx_bad','event_pppoe_mass'].forEach(k=>{if(f.elements[k])f.elements[k].checked=!!n[k]});
+ ['cooldown_minutes','check_interval_seconds','rx_threshold','mass_offline_count','router_offline_grace'].forEach(k=>{if(f.elements[k])f.elements[k].value=n[k]??({cooldown_minutes:10,check_interval_seconds:60,rx_threshold:-23,mass_offline_count:10,router_offline_grace:0}[k])});
+ $('#telegramChatId').value=n.chat_id||'';$('#telegramToken').value='';$('#telegramStatus').textContent=n.has_token?'Token tersimpan • '+(n.chat_id?'Chat ID tersimpan':'Chat ID belum diisi'):'Bot belum dikonfigurasi';
+}
+$('#notificationForm')?.addEventListener('submit',async e=>{e.preventDefault();try{await api('save_notifications',new FormData(e.target),'POST');notify('Pengaturan notifikasi Telegram berhasil disimpan.');await loadSettings()}catch(err){notify(err.message,true)}});
+$('#testTelegram')?.addEventListener('click',async()=>{try{const d=await api('test_telegram',new FormData($('#notificationForm')),'POST');$('#telegramStatus').textContent='Tes berhasil dikirim.';notify(d.message)}catch(err){$('#telegramStatus').textContent='Tes gagal: '+err.message;notify(err.message,true)}});
+let lastNotificationCheck=0;
+async function checkNotifications(){const now=Date.now();if(now-lastNotificationCheck<30000)return;lastNotificationCheck=now;try{await api('check_notifications')}catch(e){/* Monitoring notifications must not interrupt dashboard refresh. */}}
+
 const modal=$('#routerModal');function showModal(){modal.classList.remove('hidden');$('#testResult').textContent=''}function hideModal(){modal.classList.add('hidden')}
 $$('[data-close]').forEach(b=>b.onclick=hideModal);
 $('#newRouter').onclick=()=>{if(routers.length>=5){notify('Maksimal 5 router.',true);return}$('#routerForm').reset();$('#routerForm').elements.id.value='';$('#modalTitle').textContent='Tambah MikroTik';showModal()};
@@ -117,4 +173,8 @@ function renderShortcutEditor(){const editor=$('#shortcutEditor');if(!editor)ret
 $('#addShortcut').onclick=()=>{shortcuts.push({label:'Shortcut baru',url:'https://'});renderShortcutEditor()};
 function removeShortcut(i){shortcuts.splice(i,1);renderShortcutEditor()}
 async function saveShortcuts(){shortcuts=shortcuts.map((s,i)=>({label:$(`[data-label="${i}"]`).value,url:$(`[data-url="${i}"]`).value}));try{await api('save_shortcuts',{items:JSON.stringify(shortcuts)},'POST');notify('Shortcut disimpan.');renderShortcuts()}catch(e){notify(e.message,true)}}
-loadOverview();setInterval(loadOverview,5000);
+// Dashboard tetap auto-refresh setiap 5 detik; GenieACS hanya refresh manual.
+loadOverview();
+setInterval(loadOverview,5000);
+checkNotifications();
+setInterval(checkNotifications,30000);

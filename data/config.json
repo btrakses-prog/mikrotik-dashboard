@@ -1,8 +1,8 @@
 {
     "branding": {
-        "logo": "",
-        "banner": "",
-        "title": "MikroTik Shortcut",
+        "logo": "uploads/logo-648c2e32a6.jpg",
+        "banner": "uploads/banner-e61727378b.jpg",
+        "title": "Rakan Fiber-TL",
         "subtitle": "Network Management Dashboard"
     },
     "shortcuts": [
@@ -52,7 +52,31 @@
             "tls": false,
             "monitor_interfaces": [
                 "vlan1090-UPLINK_IN_DR-TL"
-            ]
+            ],
+            "genieacs_url": "http://192.100.100.1:7557",
+            "genieacs_username": "btr",
+            "genieacs_password": "btr",
+            "genieacs_offline_minutes": 15
         }
-    ]
+    ],
+    "notifications": {
+        "enabled": true,
+        "bot_token": "8576193513:AAHnWjXnPeg6crYG_ef0dU0A4GmeqMCPisU",
+        "chat_id": "-1003391876655",
+        "anti_spam": true,
+        "reminder_enabled": false,
+        "recovery_enabled": false,
+        "batch_enabled": true,
+        "cooldown_minutes": 10,
+        "check_interval_seconds": 60,
+        "rx_threshold": -25,
+        "mass_offline_count": 10,
+        "router_offline_grace": 0,
+        "event_router_offline": false,
+        "event_wan_down": true,
+        "event_onu_offline": false,
+        "event_rx_bad": true,
+        "event_pppoe_mass": true,
+        "last_check": 1793773703
+    }
 }
