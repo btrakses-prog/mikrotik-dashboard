@@ -11,13 +11,109 @@ function connect_router(array $router): RouterOSClient {
     $api = new RouterOSClient(6); $api->connect($router); return $api;
 }
 function safe_router(array $r): array {
-    unset($r['password']); return $r;
+    unset($r['password'], $r['genieacs_password']); return $r;
+}
+function genieacs_http(array $r): array {
+    $base = trim((string)($r['genieacs_url'] ?? ''));
+    if ($base === '') throw new RuntimeException('URL GenieACS belum diatur pada router ini');
+    if (!preg_match('~^https?://~i', $base)) throw new RuntimeException('URL GenieACS harus diawali http:// atau https://');
+    $url = rtrim($base, '/') . '/devices/?query=' . rawurlencode('{}');
+    $headers = "Accept: application/json\r\n";
+    $user = (string)($r['genieacs_username'] ?? ''); $pass = (string)($r['genieacs_password'] ?? '');
+    if ($user !== '') $headers .= 'Authorization: Basic ' . base64_encode($user . ':' . $pass) . "\r\n";
+    $ctx = stream_context_create(['http'=>['method'=>'GET','header'=>$headers,'timeout'=>12,'ignore_errors'=>true]]);
+    $body = @file_get_contents($url, false, $ctx);
+    $status = 0; foreach (($http_response_header ?? []) as $h) if (preg_match('~HTTP/\S+\s+(\d+)~', $h, $m)) $status=(int)$m[1];
+    if ($body === false || $status < 200 || $status >= 300) throw new RuntimeException('GenieACS HTTP ' . $status . '. Periksa URL, autentikasi, dan akses server.');
+    $data = json_decode($body, true); if (!is_array($data)) throw new RuntimeException('Respons GenieACS bukan JSON yang valid');
+    return $data;
+}
+function genie_flatten($value, string $prefix='', array &$out=[]): array {
+    if (!is_array($value)) { if ($prefix !== '') $out[$prefix]=$value; return $out; }
+    foreach ($value as $k=>$v) { $path=$prefix===''?(string)$k:$prefix.'.'.$k; if (is_array($v) && array_key_exists('_value',$v)) $out[$path]=$v['_value']; elseif (is_array($v) && array_key_exists('value',$v) && count($v)<=3) $out[$path]=$v['value']; else genie_flatten($v,$path,$out); }
+    return $out;
+}
+function genie_pick(array $flat, array $exact, string $pattern=''): string {
+    foreach ($exact as $key) {
+        if (isset($flat[$key]) && is_scalar($flat[$key]) && trim((string)$flat[$key]) !== '') return trim((string)$flat[$key]);
+    }
+    if ($pattern !== '') {
+        foreach ($flat as $key=>$value) {
+            if (preg_match($pattern,$key) && is_scalar($value) && trim((string)$value) !== '') return trim((string)$value);
+        }
+    }
+    return '';
+}
+function genie_pick_virtual(array $flat, string $leafPattern): array {
+    // Prefer VirtualParameters only; never accidentally read PPP passwords or raw vendor values.
+    foreach ($flat as $key=>$value) {
+        if (stripos($key, 'VirtualParameters.') !== 0) continue;
+        $leaf = substr($key, strlen('VirtualParameters.'));
+        if (preg_match($leafPattern, $leaf) && is_scalar($value) && trim((string)$value) !== '') {
+            return [trim((string)$value), $key];
+        }
+    }
+    return ['', ''];
+}
+function genie_parse_rx_dbm(string $raw): ?float {
+    $raw = trim($raw);
+    if ($raw === '' || strcasecmp($raw, 'N/A') === 0 || $raw === '-') return null;
+    // The supplied GenieACS virtual parameter already converts vendor values to dBm.
+    // Never reconvert it; reject raw integer units and implausible values.
+    if (!preg_match('/-?\\d+(?:\\.\\d+)?/', $raw, $m)) return null;
+    $value = (float)$m[0];
+    if ($value >= 0 || $value < -50) return null;
+    return round($value, 2);
 }
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 $config = app_config();
 
 try {
 switch ($action) {
+case 'genieacs_devices':
+    $rows=[]; $errors=[]; $now=time(); $onlineMinutes=15;
+    foreach (($config['routers'] ?? []) as $r) {
+        if (empty($r['genieacs_url'])) continue;
+        try {
+            $devices=genieacs_http($r);
+            foreach ($devices as $device) {
+                if (!is_array($device)) continue;
+                $flat=[]; genie_flatten($device,'',$flat);
+                // ALIJAYA-NET PPP username Virtual Parameter is preferred.
+                $username=genie_pick($flat,[
+                    'VirtualParameters.pppUsername',
+                    'VirtualParameters.PPPUsername'
+                ],'~^VirtualParameters\\..*pppUsername$~i');
+                if ($username === '' || $username === '-') {
+                    $username=genie_pick($flat,[
+                        'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.2.Username',
+                        'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.Username',
+                        'Device.PPP.Interface.1.Username'
+                    ],'~(^|\\.)WANPPPConnection\\.\\d+\\.Username$|(^|\\.)PPP\\.Interface\\.\\d+\\.Username$~i');
+                }
+                $serial=genie_pick($flat,['_deviceId._SerialNumber','_deviceId.SerialNumber','InternetGatewayDevice.DeviceInfo.SerialNumber','Device.DeviceInfo.SerialNumber'],'/(^|\\.)SerialNumber$/i');
+                $model=genie_pick($flat,['InternetGatewayDevice.DeviceInfo.ModelName','Device.DeviceInfo.ModelName','_deviceId._ProductClass','_deviceId.ProductClass'],'/(ModelName|ProductClass)$/i');
+
+                // The RX Virtual Parameter supplied by the user already returns normalized dBm.
+                // Its exact VP label was not supplied, so find RX/Receive/Optical-named VPs.
+                list($rx, $rxSource) = genie_pick_virtual($flat, '/(rx|receive)/i');
+                if ($rx === '') {
+                    // Fallback for devices that do not yet have the RX Virtual Parameter.
+                    $rx=genie_pick($flat,[], '/(RxPower|RXPower|Optical.*(Power|Receive)|Receive.*Power|PON.*Rx)/i');
+                    $rxSource='';
+                }
+                $rxNum=genie_parse_rx_dbm($rx);
+                $last=(string)($device['_lastInform'] ?? ''); $lastTs=$last!==''?strtotime($last):false;
+                $mins=max(1,min(1440,(int)($r['genieacs_offline_minutes']??15))); $online=($lastTs!==false && ($now-$lastTs)<=($mins*60));
+                $rows[]=['username'=>$username!==''?$username:'-','serial'=>$serial!==''?$serial:'-','model'=>$model!==''?$model:'-','rx'=>$rxNum,'rx_source'=>$rxSource,'last_inform'=>$last,'status'=>$online?'online':'offline','router'=>$r['label'],'router_id'=>$r['id']];
+            }
+        } catch (Throwable $e) { $errors[]=['router'=>$r['label'],'error'=>$e->getMessage()]; }
+    }
+    json_response(['rows'=>$rows,'errors'=>$errors,'total'=>count($rows)]);
+case 'test_genieacs':
+    $r=['genieacs_url'=>trim($_POST['genieacs_url']??''),'genieacs_username'=>trim($_POST['genieacs_username']??''),'genieacs_password'=>$_POST['genieacs_password']??''];
+    if ($r['genieacs_password']==='' && !empty($_POST['id'])) { $old=router_by_id($config,(string)$_POST['id']); if($old)$r['genieacs_password']=$old['genieacs_password']??''; }
+    $devices=genieacs_http($r); json_response(['ok'=>true,'message'=>'Terhubung. Ditemukan '.count($devices).' perangkat.']);
 case 'overview':
     $result = [];
     $totalOnline = 0; $totalOffline = 0; $onlineRouters = 0;
@@ -151,7 +247,11 @@ case 'save_router':
         'username'=>trim($_POST['username'] ?? ''),
         'password'=>(trim($_POST['password'] ?? '') !== '' ? $_POST['password'] : ($existing['password'] ?? '')),
         'tls'=>isset($_POST['tls']) && $_POST['tls'] === 'on',
-        'monitor_interfaces'=>array_values(array_filter(array_map('trim', explode(',', $_POST['monitor_interfaces'] ?? ''))))
+        'monitor_interfaces'=>array_values(array_filter(array_map('trim', explode(',', $_POST['monitor_interfaces'] ?? '')))),
+        'genieacs_url'=>trim($_POST['genieacs_url'] ?? ($existing['genieacs_url'] ?? '')),
+        'genieacs_username'=>trim($_POST['genieacs_username'] ?? ($existing['genieacs_username'] ?? '')),
+        'genieacs_password'=>(trim($_POST['genieacs_password'] ?? '') !== '' ? $_POST['genieacs_password'] : ($existing['genieacs_password'] ?? '')),
+        'genieacs_offline_minutes'=>max(1,min(1440,(int)($_POST['genieacs_offline_minutes'] ?? ($existing['genieacs_offline_minutes'] ?? 15))))
     ];
     if (!$router['label'] || !$router['host'] || !$router['username'] || !$router['password']) json_response(['error'=>'Lengkapi nama, host, username dan password API'],400);
     if ($existing) {
